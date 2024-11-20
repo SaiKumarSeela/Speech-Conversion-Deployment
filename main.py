@@ -23,7 +23,7 @@ app = FastAPI()
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION")
-TRAINING_BUCKET_NAME = "focus-transcribe"
+TRAINING_BUCKET_NAME = "focus-tts-stt"  # focus-transcribe
 
 # Initialize S3 Syncer
 s3_sync = S3Sync(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
@@ -205,4 +205,4 @@ async def reset_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=3000)
