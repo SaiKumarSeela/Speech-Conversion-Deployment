@@ -1,0 +1,16 @@
+data/
+frontend/
+message/
+model/
+sample/
+notes.txt
+sr_main.py
+test_fasterwhisper.py
+test_vosk.py
+whisper_main.py
+wsa_main.py
+logs/
+mms-speech
+.env
+speechdeploy/
+notes.txt
