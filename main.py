@@ -71,15 +71,6 @@ async def read_root(request: Request):
     logging.info("Serving root HTML page")
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.websocket("/text-stats")
-async def text_stats_websocket(websocket: WebSocket):
-    await websocket.accept()
-    try:
-        stats_json = json.dumps(text_stats)
-        await websocket.send_text(stats_json)
-    except Exception as e:
-        await websocket.close()
-
 @app.post("/text-to-speech")
 async def text_to_speech(data: dict):
     global call_stats

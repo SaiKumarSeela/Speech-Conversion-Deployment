@@ -14,3 +14,4 @@ mms-speech
 .env
 speechdeploy/
 notes.txt
+transcriptions/

@@ -93,10 +93,6 @@ function setupSpeechRecognition(speakerId) {
                 updateStatsDisplay(stats);
 
             }
-            // console.log(transcript)
-
-
-
         };
 
         // Handle any errors with speech recognition
@@ -227,18 +223,8 @@ async function handleTextToSpeech() {
             const audio = document.getElementById('audioPlayer');
             audio.src = `data:audio/wav;base64,${data.audio}`;
             audio.style.display = 'block';
-
-            // After TTS completion, start WebSocket for stats updates
-            websocket = new WebSocket('ws://localhost:8000/text-stats');
-
-            websocket.onmessage = function(event) {
-                const statsData = JSON.parse(event.data);
-                updateTTSStatsDisplay(statsData);
-            };
-
-            websocket.onerror = function(error) {
-                console.error('WebSocket Error:', error);
-            };
+            statsData = data.stats;
+            updateTTSStatsDisplay(statsData);
         }
     } catch (error) {
         console.error('Error:', error);
