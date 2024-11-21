@@ -1,0 +1,9 @@
+{
+    "duration": 9.125,
+    "processingTime": 4.674,
+    "totalWords": 15,
+    "speakerWords": {
+        "1": 7,
+        "2": 8
+    }
+}

@@ -82,8 +82,19 @@ async def text_stats_websocket(websocket: WebSocket):
 
 @app.post("/text-to-speech")
 async def text_to_speech(data: dict):
+    global call_stats
     try:
         text = data.get("text")
+        stats = data.get("stats")
+        speaker_transcript = data.get("speakers_transcription")
+        call_stats = stats
+        print("Stats:",stats)
+        print("Type:", type(stats))
+        print("Transcript:",speaker_transcript)
+        print("Type:", type(speaker_transcript))
+        logging.info(f"Speech to text Stats:{stats}")
+        logging.info(f"Speech to text Transcript:{speaker_transcript}")
+
         text_stats["start_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         text_stats["total_words"] = len(text.split()) if text else 0
         process_start = time.time()
@@ -100,91 +111,99 @@ async def text_to_speech(data: dict):
         audio_base64 = base64.b64encode(buffer.read()).decode()
         text_stats["processing_time"] = time.time() - process_start
 
+        logging.info(f"Text to speech stats: {text_stats}")
+        logging.info("Store transcriptions Locally")
         save_tts_stats_to_json(text_stats, save_dir)
+        save_transcription_to_file(speaker_transcription=speaker_transcript, output_dir=save_dir)
+        save_stats_to_json(stats=stats, output_dir=save_dir)
+        
         s3_sync.sync_folder_to_s3(folder=save_dir, aws_bucket_name=TRAINING_BUCKET_NAME)
+        logging.info("Store transcriptions into s3")
+        logging.info("Store the speech to text stats and text to speech stats into s3")
+
         return JSONResponse({"audio": audio_base64, "stats":text_stats})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.websocket("/transcribe")
-async def live_transcribe(websocket: WebSocket):
-    global save_dir
-    global speakers_transcription
+# @app.websocket("/transcribe")
+# async def live_transcribe(websocket: WebSocket):
+#     global save_dir
+#     global speakers_transcription
 
-    await websocket.accept()
-    logging.info("Initialize the recognizer")
-    recognizer = sr.Recognizer()
+#     await websocket.accept()
+#     logging.info("Initialize the recognizer")
+#     recognizer = sr.Recognizer()
 
-    call_stats["start_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#     call_stats["start_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    process_start = time.time()
+#     process_start = time.time()
 
-    # Track which speaker is speaking (start with speaker 1)
-    current_speaker = 1
+#     # Track which speaker is speaking (start with speaker 1)
+#     current_speaker = 1
 
-    # Use the microphone as the audio source
-    with sr.Microphone() as source:
-        logging.info("Adjusting for ambient noise... Please wait.")
-        #recognizer.adjust_for_ambient_noise(source)
+#     # Use the microphone as the audio source
+#     with sr.Microphone() as source:
+#         logging.info("Adjusting for ambient noise... Please wait.")
+#         #recognizer.adjust_for_ambient_noise(source)
         
-        logging.info("You can start speaking now...")
-        message = await websocket.receive_text()
-        data = json.loads(message)
-        if data['type'] == 'start':
-            current_speaker = data['speakerId']
-            logging.info(f"Started recording for Speaker {current_speaker}")
+#         logging.info("You can start speaking now...")
+#         message = await websocket.receive_text()
+#         data = json.loads(message)
+#         if data['type'] == 'start':
+#             current_speaker = data['speakerId']
+#             logging.info(f"Started recording for Speaker {current_speaker}")
 
-        while True:
-            try:
-                # Capture audio from the microphone
-                #audio = recognizer.listen(source , timeout=5, phrase_time_limit=10)
-                audio = recognizer.listen(source)                     
-                # Recognize speech using Google Web Speech API
-                text = recognizer.recognize_google(audio)
+#         while True:
+#             try:
+#                 # Capture audio from the microphone
+#                 #audio = recognizer.listen(source , timeout=5, phrase_time_limit=10)
+#                 audio = recognizer.listen(source)                     
+#                 # Recognize speech using Google Web Speech API
+#                 text = recognizer.recognize_google(audio)
                 
-                # Check if the user wants to stop via voice command
-                if "stop listening" in text.lower():
-                    call_stats["total_duration"] = time.time() - process_start
-                    await websocket.send_text(json.dumps({
-                        "type": "stats",
-                        "data": call_stats
-                    }))
-                    logging.info("Stopping transcription by voice command.")
-                    break
-                await websocket.send_text(text)
-                process_end = time.time()
-                logging.info(f"Transcription: {text}")
+#                 # Check if the user wants to stop via voice command
+#                 if "stop listening" in text.lower():
+#                     call_stats["total_duration"] = time.time() - process_start
+#                     await websocket.send_text(json.dumps({
+#                         "type": "stats",
+#                         "data": call_stats
+#                     }))
+#                     logging.info("Stopping transcription by voice command.")
+#                     break
+#                 await websocket.send_text(text)
+#                 process_end = time.time()
+#                 logging.info(f"Transcription: {text}")
 
-                call_stats["processing_time"] += (process_end - process_start)
-                word_count = len(text.split())
-                call_stats["total_words"] += word_count
+#                 call_stats["processing_time"] += (process_end - process_start)
+#                 word_count = len(text.split())
+#                 call_stats["total_words"] += word_count
 
-                if current_speaker not in call_stats["speakers_words"]:
-                    call_stats["speakers_words"][current_speaker] = 0
-                call_stats["speakers_words"][current_speaker] += word_count
+#                 if current_speaker not in call_stats["speakers_words"]:
+#                     call_stats["speakers_words"][current_speaker] = 0
+#                 call_stats["speakers_words"][current_speaker] += word_count
 
-                # Update stats and send them
-                jsondata = json.dumps({
-                    'type': 'stats',
-                    'data': call_stats
-                })
-                await websocket.send_text(jsondata)
+#                 # Update stats and send them
+#                 jsondata = json.dumps({
+#                     'type': 'stats',
+#                     'data': call_stats
+#                 })
+#                 await websocket.send_text(jsondata)
 
-                speakers_transcription.append(f"Speaker{current_speaker}: {text}")
-                await asyncio.sleep(0.1)
+#                 speakers_transcription.append(f"Speaker{current_speaker}: {text}")
+#                 await asyncio.sleep(0.1)
 
-            except sr.UnknownValueError:
-                await websocket.send_text("")
-            except sr.RequestError as e:
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "data": f"Could not request results; {e}"
-                }))
-        save_stats_to_json(call_stats,save_dir)
-        save_transcription_to_file(speakers_transcription, save_dir)
-        s3_sync.sync_folder_to_s3(folder = save_dir, aws_bucket_name=TRAINING_BUCKET_NAME)
-        logging.info("Store transcriptions into s3")
-        logging.info("Store the speech to text stats into s3")
+#             except sr.UnknownValueError:
+#                 await websocket.send_text("")
+#             except sr.RequestError as e:
+#                 await websocket.send_text(json.dumps({
+#                     "type": "error",
+#                     "data": f"Could not request results; {e}"
+#                 }))
+#         save_stats_to_json(call_stats,save_dir)
+#         save_transcription_to_file(speakers_transcription, save_dir)
+#         s3_sync.sync_folder_to_s3(folder = save_dir, aws_bucket_name=TRAINING_BUCKET_NAME)
+        # logging.info("Store transcriptions into s3")
+        # logging.info("Store the speech to text stats into s3")
 
 @app.get("/get-stats")
 async def get_stats():
@@ -195,14 +214,13 @@ async def get_stats():
 async def reset_stats():
     global call_stats
     call_stats = {
-        "start_time": None,
-        "total_duration": 0,
-        "processing_time": 0,
-        "total_words": 0,
-        "speakers_words": {}
-    }
+        "duration": 0,
+        "processingTime": 0,
+        "totalWords": 0,
+        "speakerWords": {}
+    };
     return {"status": "Stats reset successfully"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=3000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

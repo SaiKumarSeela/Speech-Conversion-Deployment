@@ -1,6 +1,10 @@
 let isRecording = false;
 let transcript = "";
 let websocket;
+let recognition;
+let userAnswer = "";
+let words = "";
+let speakers_transcription = [];
 let transcriptionHistory = [];
 let stats = {
     duration: 0,
@@ -9,9 +13,7 @@ let stats = {
     speakerWords: {}
 };
 
-// function calculateProgress(value, total) {
-//     return total > 0 ? (value / total) * 100 : 0;
-// }
+const timerDisplay = document.getElementById("duration");
 
 function calculateProgress(speakerWords, totalWords) {
     return totalWords > 0 ? (speakerWords / totalWords) * 100 : 0;
@@ -23,91 +25,110 @@ function formatTime(seconds) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-
 function updateStatsDisplay(stats) {
+    // Update the main stats
     document.getElementById('duration').textContent = formatTime(stats.duration);
     document.getElementById('processingTime').textContent = formatTime(stats.processingTime);
     document.getElementById('totalWords').textContent = stats.totalWords;
 
     // Update progress bars
-    document.getElementById('processingProgress').style.width = `${calculateProgresstts(stats.processing_time, stats.duration)}%`;
+    document.getElementById('processingProgress').style.width = `${calculateProgress(stats.processingTime, stats.duration)}%`;
     document.getElementById('durationProgress').style.width = `100%`;
 
+    // Update speaker stats and progress
     for (let speaker in stats.speakerWords) {
-        const speakerWordCount = document.getElementById(`${speaker}Words`);
+        const speakerWordCount = document.getElementById(`speaker${speaker}Words`);
         if (speakerWordCount) {
             speakerWordCount.textContent = stats.speakerWords[speaker];
         }
-        const speakerProgress = document.getElementById(`${speaker}Progress`);
+        const speakerProgress = document.getElementById(`speaker${speaker}Progress`);
         if (speakerProgress) {
             speakerProgress.style.width = `${calculateProgress(stats.speakerWords[speaker], stats.totalWords)}%`;
         }
     }
 }
 
+function setupSpeechRecognition(speakerId) {
+    // Check if the browser supports speech recognition
+    if ('webkitSpeechRecognition' in window) {
+        const recognition = new webkitSpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
 
+        let startTime = Date.now();
 
-function handleLiveTranscription(speakerId) {
-    websocket = new WebSocket('ws://localhost:8000/transcribe');
+        // Define the onresult event handler for speech recognition
+        recognition.onresult = (event) => {
+            const transcript = Array.from(event.results)
+                .map(result => result[0].transcript)
+                .join('');
 
-    websocket.onopen = () => {
-        // Send the speakerId to the server when the WebSocket is open
-        websocket.send(JSON.stringify({ type: 'start', speakerId: speakerId }));
-    };
-
-    websocket.onmessage = (event) => {
-        const message = event.data;
-
-        if (message.startsWith("{") && message.endsWith("}")) {
-            try {
-                const jsonMessage = JSON.parse(message);
-
-                if (jsonMessage.type === 'stats') {
-                    stats.duration = jsonMessage.data.total_duration;
-                    stats.processingTime = jsonMessage.data.processing_time;
-                    stats.totalWords = jsonMessage.data.total_words;
-                    stats.speakerWords[`speaker${speakerId}`] = jsonMessage.data['speakers_words'][`${speakerId}`];
-
-                    updateStatsDisplay(stats);
-                }
-            } catch (e) {
-                console.error("Failed to parse JSON:", e);
-            }
-        } else {
+            // Get the correct transcriptDiv for the speaker
             const transcriptDiv = document.getElementById(`transcriptSpeaker${speakerId}`);
-            transcriptDiv.textContent += message + ' ';
-        }
-    };
 
-    websocket.onclose = () => {
-        isRecording = false;
-        document.getElementById(`statusSpeaker${speakerId}`).textContent = "Recording stopped.";
-        websocket = null;
-    };
+            // Update the transcript in the UI
+            transcriptDiv.textContent = transcript;
 
-    websocket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        stopRecording(speakerId);
-    };
+            // Store the final transcript when it's complete
+            if (event.results[event.results.length - 1].isFinal) {
+                userAnswer = transcript; // Store the final transcription
+                const wordCount = userAnswer.split(' ').length;
+                stats.totalWords += wordCount;
+                if (!stats.speakerWords[speakerId.toString()]) {
+                    stats.speakerWords[speakerId.toString()] = 0;
+                }
+                speakers_transcription.push(`Speaker${speakerId.toString()}: ${userAnswer}`)
+
+                stats.speakerWords[speakerId.toString()] += wordCount;
+                console.log(stats.totalWords)
+                console.log(stats.speakerWords[speakerId.toString()])
+                console.log(stats.speakerWords)
+                    // Update processing time
+                let processEndTime = Date.now();
+                stats.processingTime = (processEndTime - startTime) / 1000;
+                // Calculate total duration (total transcription duration)
+                stats.duration += stats.processingTime
+                    // Update the stats display
+                updateStatsDisplay(stats);
+
+            }
+            // console.log(transcript)
+
+
+
+        };
+
+        // Handle any errors with speech recognition
+        recognition.onerror = (event) => {
+            console.error("Speech Recognition Error:", event.error);
+            alert("Error with speech recognition: " + event.error);
+        };
+
+        // Return the recognition object to start/stop as needed
+        return recognition;
+    } else {
+        alert("Your browser does not support Speech Recognition");
+        return null;
+    }
 }
 
 function startRecording(speakerId) {
     if (!isRecording) {
+        recognition = setupSpeechRecognition(speakerId)
+        recognition.start();
         isRecording = true;
-        const transcriptDiv = document.getElementById(`transcriptSpeaker${speakerId}`);
-        transcriptDiv.textContent = ""; // Clear previous transcript
-        handleLiveTranscription(speakerId);
+        updateStatsDisplay(stats);
         document.getElementById(`statusSpeaker${speakerId}`).textContent = "Recording...";
     }
 }
 
 function stopRecording(speakerId) {
-    if (websocket) {
-        websocket.close();
-        isRecording = false;
-        document.getElementById(`statusSpeaker${speakerId}`).textContent = "Recording stopped.";
-    }
+    recognition.stop();
+    isRecording = false;
+    document.getElementById(`statusSpeaker${speakerId}`).textContent = "Recording stopped.";
 }
+
 
 document.getElementById("generateSpeakers").addEventListener("click", () => {
     const numSpeakers = document.getElementById("numSpeakers").value;
@@ -129,8 +150,8 @@ document.getElementById("generateSpeakers").addEventListener("click", () => {
         startBtn.classList.add("startRecording");
         startBtn.onclick = () => startRecording(i);
 
-        const speakerMessage = document.createElement('p');
-        speakerMessage.innerHTML = `Say <strong style="color: red;">stop listening</strong> to stop the recording`;
+        // const speakerMessage = document.createElement('p');
+        // speakerMessage.innerHTML = `Say <strong style="color: red;">stop listening</strong> to stop the recording`;
 
         const stopBtn = document.createElement("button");
         stopBtn.innerText = "Stop Recording";
@@ -148,7 +169,7 @@ document.getElementById("generateSpeakers").addEventListener("click", () => {
         speakerDiv.appendChild(speakerLabel);
         speakerDiv.appendChild(startBtn);
         speakerDiv.appendChild(stopBtn);
-        speakerDiv.appendChild(speakerMessage);
+        //speakerDiv.appendChild(speakerMessage);
         speakerDiv.appendChild(statusDiv);
         speakerDiv.appendChild(transcriptDiv);
         speakersContainer.appendChild(speakerDiv);
@@ -189,14 +210,14 @@ async function handleTextToSpeech() {
     if (!text) return;
 
     // Initial stats update with text length only
-    const ttsStats = { textLength: text.length, processingTime: 0, audioDuration: 0 };
+    const ttsStats = { textLength: 0, processingTime: 0, audioDuration: 0 };
     updateTTSStatsDisplay(ttsStats);
 
     try {
         const response = await fetch('/text-to-speech', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
+            body: JSON.stringify({ text, stats, speakers_transcription })
         });
 
         const data = await response.json();
