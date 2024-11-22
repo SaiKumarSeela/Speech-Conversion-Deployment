@@ -225,6 +225,7 @@ async function handleTextToSpeech() {
             audio.style.display = 'block';
             statsData = data.stats;
             updateTTSStatsDisplay(statsData);
+
         }
     } catch (error) {
         console.error('Error:', error);
